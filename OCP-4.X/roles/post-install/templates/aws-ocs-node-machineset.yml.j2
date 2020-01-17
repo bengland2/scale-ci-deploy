@@ -1,0 +1,72 @@
+---
+apiVersion: v1
+items:
+- apiVersion: machine.openshift.io/v1beta1
+  kind: MachineSet
+  metadata:
+    creationTimestamp: null
+    labels:
+      {{machineset_metadata_label_prefix}}/cluster-api-cluster: {{cluster_name.stdout}}
+      cluster.ocs.openshift.io/openshift-storage: ""
+      {{machineset_metadata_label_prefix}}/cluster-api-machine-role: ocs
+      {{machineset_metadata_label_prefix}}/cluster-api-machine-type: ocs
+    name: ocs-{{aws_region.stdout}}a
+    namespace: openshift-machine-api
+  spec:
+    replicas: {{ocs_server_hosts}}
+    selector:
+      matchLabels:
+        {{machineset_metadata_label_prefix}}/cluster-api-cluster: {{cluster_name.stdout}}
+        {{machineset_metadata_label_prefix}}/cluster-api-machineset: {{cluster_name.stdout}}-infra-{{aws_region.stdout}}a
+    template:
+      metadata:
+        creationTimestamp: null
+        labels:
+          {{machineset_metadata_label_prefix}}/cluster-api-cluster: {{cluster_name.stdout}}
+          {{machineset_metadata_label_prefix}}/cluster-api-machine-role: ocs
+          {{machineset_metadata_label_prefix}}/cluster-api-machine-type: ocs
+          {{machineset_metadata_label_prefix}}/cluster-api-machineset: {{cluster_name.stdout}}-infra-{{aws_region.stdout}}a
+      spec:
+        metadata:
+          creationTimestamp: null
+          labels:
+            node-role.kubernetes.io/infra: ""
+        providerSpec:
+          value:
+            ami:
+              id: {{ami_id.stdout}}
+            apiVersion: awsproviderconfig.openshift.io/v1beta1
+            credentialsSecret:
+              name: aws-cloud-credentials
+            deviceIndex: 0
+            iamInstanceProfile:
+              id: {{cluster_name.stdout}}-worker-profile
+            instanceType: {{ocs_server_type}}
+            kind: AWSMachineProviderConfig
+            metadata:
+              creationTimestamp: null
+            placement:
+              availabilityZone: {{aws_region.stdout}}a
+              region: {{aws_region.stdout}}
+            publicIp: false
+            securityGroups:
+            - filters:
+              - name: tag:Name
+                values:
+                - {{cluster_name.stdout}}-worker-sg
+            subnet:
+              filters:
+              - name: tag:Name
+                values:
+                - {{cluster_name.stdout}}-private-{{aws_region.stdout}}a
+            tags:
+            - name: kubernetes.io/cluster/{{cluster_name.stdout}}
+              value: owned
+            userDataSecret:
+              name: worker-user-data
+        versions:
+          kubelet: ""
+  status:
+    replicas: 0
+kind: List
+metadata: {}

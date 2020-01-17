@@ -110,6 +110,16 @@
     - ms: "{{ansible_user_dir}}/scale-ci-deploy/workload-node-machineset.yml"
       toggle: "{{openshift_toggle_workload_node}}"
 
+- name: (AWS) Template out OCS machineset yamls
+  template:
+     src: aws-ocs-node-machineset.yml.j2
+     dest: "{{ansible_user_dir}}/scale-ci-deploy/ocs-machineset.yml"
+  when: ocs_server_type is defined
+
+  name: instantiate OCS machineset
+  shell: "oc create -f {{ansible_user_dir}}/scale-ci-deploy/ocs-machineset.yml"
+  when: ocs_server_type is defined
+
 - name: Set expected node count
   set_fact:
     expected_node_count: "{{current_node_count.stdout|int}}"
@@ -123,6 +133,11 @@
   set_fact:
     expected_node_count: "{{expected_node_count|int + 1}}"
   when: openshift_toggle_workload_node|bool
+
+- name: Increment expected node count with OCS nodes
+  set_fact:
+    expected_node_count: "{{expected_node_count|int + ocs_server_hosts|int}}"
+  when: ocs_server_hosts is defined
 
 - name: Poll nodes to see if creating nodes finished
   shell: oc get nodes | grep " Ready" -ic
@@ -245,6 +260,44 @@
      #   patch: |
      #     '{"spec": {"template": {"spec": {"nodeSelector": {"node-role.kubernetes.io/infra": ""}}}}}'
   when: openshift_toggle_infra_node|bool
+
+  name: deploy OCS operator
+  block:
+    - name: clone ocs-operator
+      git:
+        repo: 'https://github.com/openshift/ocs-operator'
+        dest: "{{ansible_user_dir}}/ocs-operator"
+        force: yes
+
+    - name: fetch release
+      shell:
+        cmd: "git fetch {{ocs_repo}} {{ocs_version}}"
+        chdir: "{{ansible_user_dir}}/ocs-operator"
+
+    - name: checkout release
+      shell:
+        cmd: "git checkout {{ocs_version}}"
+        chdir: "{{ansible_user_dir}}/ocs-operator"
+
+    - name: create OCS operator 
+      shell:
+        cmd: "oc create -f deploy-ocs-42.yaml"
+        chdir: "{{ansible_user_dir}}/ocs-operator"
+
+    - name: wait for OCS operator to be in running state
+      shell:
+        cmd: oc -n openshift-storage wait --timeout=100s -l app=ocs-operator --for condition=running
+
+    - name: deploy OCS cluster
+        cmd: "oc create -f deploy/crds/ocs_v1_storagecluster_cr.yaml"
+        chdir: "{{ansible_user_dir}}/ocs-operator"
+
+    - name: wait for OCS MDS server to be in running state
+      shell:
+        cmd: oc -n openshift-storage wait --timeout=500s -l app=ceph-mds --for condition=running
+
+  when: ocs_server_hosts is defined
+
 
 - name: Use sincgars to enable remote write
   block:
